@@ -19,15 +19,13 @@ An intelligent document parsing API that extracts structured data from PDFs, ima
 - **Tesseract.js** - OCR for images
 - **Google Generative AI** - AI-powered data structuring
 - **pdf-lib** - PDF manipulation
-- **exceljs** - Generate Excel File
-- **docx** - Generate Doc File
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/mdfahaduddin/INTELLIFORM.git
-cd back
+git clone https://github.com/yourusername/intelliform.git
+cd intelliform
 ```
 
 2. Install dependencies:
@@ -37,13 +35,8 @@ npm install
 
 3. Create a `.env` file in the root directory:
 ```env
+PORT=3000
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_API_KEY_2=your2nd_gemini_api_key_here
-GEMINI_API_KEY_3=your3rd_gemini_api_key_here
-GEMINI_API_KEY_4=your4th_gemini_api_key_here
-GEMINI_API_KEY_5=your5th_gemini_api_key_here
-PORT=5000
-CLIENT_URL=http://localhost:3000
 ```
 
 4. Get your Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
@@ -66,24 +59,28 @@ npm start
 
 **POST** `/api/parse`
 
-Upload a file (PDF OR Image) to extract structured data.
+Upload a file (PDF, image, or markdown) to extract structured data.
 
 #### Request
 
 - **Method**: POST
 - **Content-Type**: multipart/form-data
 - **Body**: Form data with a `file` field
-            Form data with a `exportType` field
 
+#### Example using cURL
+
+```bash
+curl -X POST http://localhost:3000/api/parse \
+  -F "file=@document.pdf"
+```
 
 #### Example using JavaScript (Fetch)
 
 ```javascript
 const formData = new FormData();
 formData.append('file', fileInput.files[0]);
-formData.append('exportType', exportType);
 
-const response = await fetch('http://localhost:5000/api/parse', {
+const response = await fetch('http://localhost:3000/api/parse', {
   method: 'POST',
   body: formData
 });
@@ -120,6 +117,8 @@ Error:
 |-----------|-----------|--------|
 | PDF | `.pdf` | Text extraction via pdfjs-dist |
 | Images | `.jpg`, `.jpeg`, `.png`, `.bmp`, `.gif` | OCR via Tesseract.js |
+| Markdown | `.md`, `.markdown` | Direct text reading |
+| Text | `.txt` | Direct text reading |
 
 ## Project Structure
 
@@ -139,12 +138,8 @@ intelliform/
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `PORT` | Server port (default: 5000) | No |
+| `PORT` | Server port (default: 3000) | No |
 | `GEMINI_API_KEY` | Google Gemini API key | Yes |
-| `GEMINI_API_KEY_2` | Google Gemini API key | No |
-| `GEMINI_API_KEY_3` | Google Gemini API key | No |
-| `GEMINI_API_KEY_4` | Google Gemini API key | No |
-| `GEMINI_API_KEY_5` | Google Gemini API key | No |
 
 ## How It Works
 
@@ -152,6 +147,7 @@ intelliform/
 2. **Text Extraction**: 
    - PDFs → pdfjs-dist extracts embedded text
    - Images → Tesseract.js performs OCR
+   - Markdown/Text → Direct file reading
 3. **AI Processing**: Extracted text is sent to Gemini AI with a prompt to structure the data
 4. **JSON Response**: AI returns structured JSON data
 5. **Cleanup**: Temporary uploaded files are deleted
@@ -210,4 +206,4 @@ For issues and questions:
 
 ---
 
-Created by Md. Fahad Uddin.
+Made with ❤️ by Md Fahad Uddin.

@@ -5,7 +5,7 @@ import Tesseract from "tesseract.js";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
 import ExcelJS from "exceljs";
 import { Document, Packer, Paragraph, TextRun } from "docx";
-import { getNextModel, API_KEYS_COUNT } from "../geminiClient.js";
+import { generateContent, API_KEYS_COUNT } from "../groqClient.js";
 
 const router = express.Router();
 const upload = multer({ dest: "uploads/" });
@@ -49,11 +49,14 @@ async function extractTextFromPDF(filePath) {
   const pdfDocument = await loadingTask.promise;
   let fullText = "";
 
+  console.log(`📄 Extracting text from ${pdfDocument.numPages} pages...`);
+
   for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
     const page = await pdfDocument.getPage(pageNum);
     const textContent = await page.getTextContent();
     const pageText = textContent.items.map((item) => item.str).join(" ");
     fullText += pageText + "\n";
+    console.log(`  ✓ Page ${pageNum}/${pdfDocument.numPages} extracted`);
   }
 
   return fullText.trim();
@@ -61,16 +64,24 @@ async function extractTextFromPDF(filePath) {
 
 async function extractTextFromImage(filePath) {
   try {
+    console.log(`🖼️  Starting OCR on image...`);
+
     const {
       data: { text },
     } = await Tesseract.recognize(filePath, "eng+ben", {
-      logger: (m) => console.log(m),
+      logger: (m) => {
+        if (m.status === "recognizing text") {
+          console.log(`  ⏳ OCR Progress: ${Math.round(m.progress * 100)}%`);
+        }
+      },
       tessedit_pageseg_mode: Tesseract.PSM.AUTO,
       preserve_interword_spaces: "1",
     });
+
+    console.log(`  ✓ OCR completed successfully`);
     return text;
   } catch (error) {
-    console.error("Tesseract OCR Error:", error);
+    console.error("❌ Tesseract OCR Error:", error);
     throw new Error("Failed to extract text from image");
   }
 }
@@ -109,6 +120,12 @@ async function jsonToExcel(data) {
   }
 
   worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFE0E0E0" },
+  };
+
   worksheet.columns.forEach((column) => {
     column.width = 20;
   });
@@ -204,7 +221,16 @@ async function jsonToWord(data) {
 
 router.post("/parse", upload.single("file"), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
+      });
+    }
+
+    console.log(`\n📁 Processing file: ${req.file.originalname}`);
+    console.log(`📊 File size: ${(req.file.size / 1024).toFixed(2)} KB`);
+    console.log(`🎯 MIME type: ${req.file.mimetype}`);
 
     const exportType = req.body.exportType?.toLowerCase() || "json";
 
@@ -245,8 +271,9 @@ router.post("/parse", upload.single("file"), async (req, res) => {
       });
     }
 
-    const prompt = `
-You are a data extraction expert. Extract structured information from the text below.
+    console.log(`✅ Text extracted: ${extractedText.length} characters`);
+
+    const prompt = `You are a data extraction expert. Extract structured information from the text below.
 
 The text may contain:
 - English text
@@ -259,7 +286,7 @@ Instructions:
 2. Identify all fields and their values
 3. Structure the data logically as an object or array of objects
 4. Preserve Bangla text as-is (don't translate)
-5. Return ONLY valid JSON, no explanations
+5. Return ONLY valid JSON, no explanations, no markdown code blocks
 
 Text:
 ${extractedText}
@@ -271,22 +298,25 @@ Return format example:
     "field_name": "value"
   }
 }
-`;
 
-    let result;
+Return ONLY the JSON object, nothing else:`;
+
+    let aiText;
     let lastError;
+
+    console.log(`🤖 Sending to Groq AI for extraction...`);
 
     for (let attempt = 0; attempt < API_KEYS_COUNT; attempt++) {
       try {
-        const model = getNextModel();
-        result = await model.generateContent([{ text: prompt }]);
+        aiText = await generateContent(prompt);
+        console.log(`✅ Successfully extracted data using Groq`);
         break;
       } catch (error) {
         lastError = error;
-        console.error(`API Key ${attempt + 1} failed:`, error.message);
+        console.error(`❌ Attempt ${attempt + 1} failed:`, error.message);
 
         if (error.message.includes("429") && attempt < API_KEYS_COUNT - 1) {
-          console.log(`Trying next API key...`);
+          console.log(`🔄 Trying next API key...`);
           continue;
         }
 
@@ -296,7 +326,9 @@ Return format example:
       }
     }
 
-    const aiText = await result.response.text();
+    if (!aiText) {
+      throw new Error("Failed to get response from AI model");
+    }
 
     let jsonOutput;
     try {
@@ -304,13 +336,27 @@ Return format example:
         .replace(/```json\n?/g, "")
         .replace(/```\n?/g, "")
         .trim();
-      jsonOutput = JSON.parse(cleanText);
+
+      const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonOutput = JSON.parse(jsonMatch[0]);
+      } else {
+        jsonOutput = JSON.parse(cleanText);
+      }
+
+      console.log(`✅ JSON parsed successfully`);
     } catch (parseError) {
+      console.error("⚠️  JSON Parse Error:", parseError);
+      console.log("Raw AI Response:", aiText);
+
       jsonOutput = {
         extracted: aiText,
         raw_ocr_text: extractedText,
+        note: "Could not parse as JSON, returning raw extracted text",
       };
     }
+
+    console.log(`📤 Exporting as ${exportType.toUpperCase()}...`);
 
     switch (exportType) {
       case "excel":
@@ -321,8 +367,9 @@ Return format example:
         );
         res.setHeader(
           "Content-Disposition",
-          "attachment; filename=extracted-data.xlsx"
+          `attachment; filename=extracted-data-${Date.now()}.xlsx`
         );
+        console.log(`✅ Excel file generated successfully`);
         return res.send(excelBuffer);
 
       case "word":
@@ -333,16 +380,25 @@ Return format example:
         );
         res.setHeader(
           "Content-Disposition",
-          "attachment; filename=extracted-data.docx"
+          `attachment; filename=extracted-data-${Date.now()}.docx`
         );
+        console.log(`✅ Word document generated successfully`);
         return res.send(wordBuffer);
 
       case "json":
       default:
+        console.log(`✅ JSON response sent successfully`);
         return res.json({
           success: true,
           data: jsonOutput,
           ocr_text: extractedText,
+          metadata: {
+            file_name: req.file.originalname,
+            file_size: req.file.size,
+            mime_type: req.file.mimetype,
+            extracted_length: extractedText.length,
+            timestamp: new Date().toISOString(),
+          },
         });
     }
   } catch (err) {
@@ -350,22 +406,46 @@ Return format example:
       fs.unlinkSync(req.file.path);
     }
 
-    console.error("Error:", err.message);
+    console.error("❌ Error:", err.message);
     console.error("Stack:", err.stack);
 
     if (
       err.message.includes("429") ||
-      err.message.includes("Resource exhausted")
+      err.message.includes("rate limit") ||
+      err.message.includes("Rate limit")
     ) {
       return res.status(429).json({
         success: false,
-        error:
-          "API rate limit reached. All API keys are exhausted. Please try again in a few minutes.",
+        error: "API rate limit reached. Please try again in a few minutes.",
         isRateLimit: true,
       });
     }
 
-    res.status(500).json({ success: false, error: err.message });
+    if (
+      err.message.includes("401") ||
+      err.message.includes("Invalid API key")
+    ) {
+      return res.status(500).json({
+        success: false,
+        error:
+          "API key configuration error. Please check your Groq API keys in .env file.",
+      });
+    }
+
+    if (
+      err.message.includes("503") ||
+      err.message.includes("Service Unavailable")
+    ) {
+      return res.status(503).json({
+        success: false,
+        error: "AI service is temporarily unavailable. Please try again later.",
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
 

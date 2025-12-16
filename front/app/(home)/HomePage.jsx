@@ -15,6 +15,7 @@ import {
   Table2,
 } from "lucide-react";
 import BackToTopButton from "@/components/BackToTopButton";
+import Link from "next/link";
 
 export default function HomePage() {
   const [file, setFile] = useState(null);
@@ -235,10 +236,12 @@ export default function HomePage() {
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="/logo/IntelliFormLogo.png" alt="Logo" className="w-40" />
+              <Link href="/">
+                <img src="/logo/IntelliFormLogo.png" alt="Logo" className="w-40" />
+              </Link>
             </div>
             <div className="flex items-center gap-4">
-              <a href="https://github.com/mdfahaduddin" target="_blank" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+              <a href="https://github.com/mdfahaduddin/INTELLIFORM" target="_blank" className="p-2 hover:bg-white/5 rounded-lg transition-colors">
                 <Github className="w-5 h-5" />
               </a>
             </div>
@@ -266,8 +269,9 @@ export default function HomePage() {
           </h1>
 
           <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto mb-8 leading-relaxed">
-            Extract structured JSON from any document using cutting-edge AI and
+            Extract structured JSON, Excel & Word from any document using cutting-edge AI and
             OCR technology.
+            <br/>
             <span className="text-indigo-400"> Lightning fast.</span>
             <span className="text-purple-400"> Incredibly accurate.</span>
           </p>
